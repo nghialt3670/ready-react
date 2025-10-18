@@ -1,5 +1,5 @@
 {
-  "name": "@readyui/material",
+  "name": "@ready-react/material",
   "version": "0.0.1",
   "private": false,
   "main": "./dist/index.js",

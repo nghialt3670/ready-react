@@ -1,1 +1,1 @@
-# `@readyui/material`
+# `@ready-react/material`

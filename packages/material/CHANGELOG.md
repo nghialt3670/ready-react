@@ -1,4 +1,4 @@
-# @readyui/material
+# @ready-react/material
 
 ## 0.0.1
 
