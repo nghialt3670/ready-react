@@ -1,17 +1,17 @@
-import React, {
-  useState,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  SyntheticEvent,
-} from "react";
 import {
   Autocomplete,
+  AutocompleteInputChangeReason,
   AutocompleteProps,
   ChipTypeMap,
   TextField,
-  AutocompleteInputChangeReason,
 } from "@mui/material";
+import React, {
+  SyntheticEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 const DEFAULT_PAGE_SIZE = 20;
 
