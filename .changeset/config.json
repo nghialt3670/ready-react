@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@repo/ui", "@repo/eslint-config", "@repo/typescript-config", "docs", "web"]
+  "ignore": ["@repo/ui", "@repo/eslint-config", "@repo/typescript-config"]
 }
