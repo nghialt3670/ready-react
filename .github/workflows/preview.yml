@@ -1,0 +1,152 @@
+name: Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Type check
+        run: pnpm run check-types
+
+      - name: Build
+        run: pnpm run build
+
+  publish:
+    name: Publish
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm run build
+
+      - name: Check for changesets
+        id: check-changesets
+        run: |
+          if [ -n "$(ls .changeset/*.md 2>/dev/null | grep -v README)" ]; then
+            echo "has-changesets=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-changesets=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create and publish snapshot
+        if: steps.check-changesets.outputs.has-changesets == 'true'
+        run: |
+          pnpm exec changeset version --snapshot pr-${{ github.event.pull_request.number }}
+          pnpm exec changeset publish --no-git-tag --tag pr
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Comment on PR
+        if: steps.check-changesets.outputs.has-changesets == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Read package.json files to find published versions
+            const packagesDir = path.join(process.cwd(), 'packages');
+            const packages = [];
+            
+            if (fs.existsSync(packagesDir)) {
+              const dirs = fs.readdirSync(packagesDir);
+              for (const dir of dirs) {
+                const pkgPath = path.join(packagesDir, dir, 'package.json');
+                if (fs.existsSync(pkgPath)) {
+                  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+                  if (!pkg.private) {
+                    packages.push({ name: pkg.name, version: pkg.version });
+                  }
+                }
+              }
+            }
+            
+            if (packages.length === 0) {
+              return;
+            }
+            
+            const packageList = packages
+              .map(pkg => `- \`${pkg.name}@${pkg.version}\``)
+              .join('\n');
+            
+            const installCmd = packages.length > 0 
+              ? `pnpm add ${packages[0].name}@pr`
+              : '';
+            
+            const comment = `## 📦 Preview Packages Published
+
+The following snapshot packages have been published with the \`pr\` tag:
+
+${packageList}
+
+You can test these packages by installing them:
+\`\`\`bash
+${installCmd}
+\`\`\`
+
+These packages will be tagged as \`pr\` on npm and won't affect the latest version.
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+

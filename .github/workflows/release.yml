@@ -7,8 +7,32 @@ on:
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
-  release:
-    name: Release
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+          
+      - run: pnpm install --frozen-lockfile
+      
+      - run: pnpm run lint
+      
+      - run: pnpm run check-types
+      
+      - run: pnpm run build
+
+  publish:
+    name: Publish
+    needs: ci
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repo
