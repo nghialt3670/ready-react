@@ -129,24 +129,24 @@ jobs:
               ? `pnpm add ${packages[0].name}@pr`
               : '';
             
-            const comment = `## 📦 Preview Packages Published
-
-The following snapshot packages have been published with the \`pr\` tag:
-
-${packageList}
-
-You can test these packages by installing them:
-\`\`\`bash
-${installCmd}
-\`\`\`
-
-These packages will be tagged as \`pr\` on npm and won't affect the latest version.
-            `;
+            const commentBody = [
+              '## 📦 Preview Packages Published',
+              '',
+              'The following snapshot packages have been published with the `pr` tag:',
+              '',
+              packageList,
+              '',
+              'You can test these packages by installing them:',
+              '```bash',
+              installCmd,
+              '```',
+              '',
+              'These packages will be tagged as `pr` on npm and won\'t affect the latest version.'
+            ].join('\n');
             
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: comment
+              body: commentBody
             });
-
