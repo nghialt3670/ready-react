@@ -8,6 +8,9 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,3 +44,22 @@ jobs:
 
       - name: Run build
         run: pnpm turbo build
+
+  format:
+    needs: check
+    uses: ./.github/workflows/format.yml
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      commit: true
+    secrets: inherit
+
+  preview:
+    needs: format
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/preview.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    secrets: inherit
