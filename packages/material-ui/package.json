@@ -12,8 +12,7 @@
     "dev": "echo 'Add dev script here'",
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "test": "vitest run",
-    "check-types": "tsc --noEmit",
-    "lint": "echo 'Add lint script here'"
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
