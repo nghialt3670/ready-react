@@ -85,46 +85,73 @@ jobs:
       - name: Build packages
         run: pnpm run build
 
+      - name: Create snapshot version
+        run: |
+          pnpm changeset version --snapshot pr${{ github.event.pull_request.number }}
+
       - name: Publish snapshot
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          version: pnpm changeset version --snapshot pr-${{ github.event.pull_request.number }}
-          publish: pnpm changeset publish --no-git-tag --tag pr
+        id: publish
+        run: |
+          pnpm changeset publish --no-git-tag --tag pr${{ github.event.pull_request.number }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Comment on PR
-        if: steps.changesets.outputs.published == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const published = JSON.parse('${{ steps.changesets.outputs.publishedPackages }}');
-            if (published.length === 0) {
+            const fs = require('fs');
+            const path = require('path');
+            
+            const prNumber = '${{ github.event.pull_request.number }}';
+            const prTag = `pr${prNumber}`;
+            
+            // Read package.json files to get snapshot versions
+            const packagesDir = path.join(process.cwd(), 'packages');
+            const packages = [];
+            
+            if (fs.existsSync(packagesDir)) {
+              const dirs = fs.readdirSync(packagesDir);
+              for (const dir of dirs) {
+                const pkgPath = path.join(packagesDir, dir, 'package.json');
+                if (fs.existsSync(pkgPath)) {
+                  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+                  if (!pkg.private && pkg.version.includes(prTag)) {
+                    packages.push({ name: pkg.name, version: pkg.version });
+                  }
+                }
+              }
+            }
+            
+            if (packages.length === 0) {
               return;
             }
             
-            const packageList = published
+            const packageList = packages
               .map(pkg => `- \`${pkg.name}@${pkg.version}\``)
               .join('\n');
             
-            const installCmd = `pnpm add ${published[0].name}@pr`;
+            const installCommands = packages
+              .map(pkg => `pnpm add ${pkg.name}@${prTag}`)
+              .join('\n');
             
             const commentBody = [
-              '## 📦 Preview Packages Published',
+              `## 📦 Preview Packages Published (PR #${prNumber})`,
               '',
-              'The following snapshot packages have been published with the `pr` tag:',
+              `The following snapshot packages have been published with the \`${prTag}\` tag:`,
               '',
               packageList,
               '',
               'You can test these packages by installing them:',
               '```bash',
-              installCmd,
+              installCommands,
               '```',
               '',
-              'These packages will be tagged as `pr` on npm and won\'t affect the latest version.'
+              `These packages are tagged as \`${prTag}\` on npm and won't affect the latest version.`,
+              '',
+              `**Note:** Each time this PR is updated, the \`${prTag}\` tag will point to the latest published version.`
             ].join('\n');
             
             github.rest.issues.createComment({
