@@ -1,162 +1,66 @@
+# .github/workflows/preview.yml
 name: Preview
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_run:
+    workflows: ["Format"]
+    types: [completed]
 
 jobs:
-  ci:
-    name: CI
+  preview:
     runs-on: ubuntu-latest
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_branch }}
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v3
         with:
-          version: 9.0.0
+          version: 8
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm run lint
-
-      - name: Type check
-        run: pnpm run check-types
-
-      - name: Build
-        run: pnpm run build
-
-  publish:
-    name: Publish
-    needs: ci
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
           registry-url: 'https://registry.npmjs.org'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.0.0
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build packages
-        run: pnpm run build
+        run: pnpm turbo build
 
-      - name: Create snapshot version
+      - name: Get PR number
+        id: pr
         run: |
-          pnpm changeset version --snapshot pr${{ github.event.pull_request.number }}
+          PR_NUMBER=$(gh pr view --json number -q .number || echo "")
+          echo "number=$PR_NUMBER" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish snapshot
-        id: publish
+      - name: Version packages for preview
+        if: steps.pr.outputs.number != ''
         run: |
-          pnpm changeset publish --no-git-tag --tag pr${{ github.event.pull_request.number }}
+          pnpm -r exec npm version prerelease --preid=pr${{ steps.pr.outputs.number }} --no-git-tag-version
+
+      - name: Publish preview to npm
+        if: steps.pr.outputs.number != ''
+        run: pnpm -r publish --tag pr${{ steps.pr.outputs.number }} --no-git-checks --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Comment on PR
+      - name: Comment preview info
+        if: steps.pr.outputs.number != ''
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require('fs');
-            const path = require('path');
-            
-            const prNumber = '${{ github.event.pull_request.number }}';
-            const prTag = `pr${prNumber}`;
-            
-            // Read package.json files to get snapshot versions
-            const packagesDir = path.join(process.cwd(), 'packages');
-            const packages = [];
-            
-            if (fs.existsSync(packagesDir)) {
-              const dirs = fs.readdirSync(packagesDir);
-              for (const dir of dirs) {
-                const pkgPath = path.join(packagesDir, dir, 'package.json');
-                if (fs.existsSync(pkgPath)) {
-                  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-                  if (!pkg.private && pkg.version.includes(prTag)) {
-                    packages.push({ name: pkg.name, version: pkg.version });
-                  }
-                }
-              }
-            }
-            
-            if (packages.length === 0) {
-              return;
-            }
-            
-            const packageList = packages
-              .map(pkg => `- \`${pkg.name}@${pkg.version}\``)
-              .join('\n');
-            
-            const installCommands = packages
-              .map(pkg => `pnpm add ${pkg.name}@${prTag}`)
-              .join('\n');
-            
-            const commentBody = [
-              `## 📦 Preview Packages Published (PR #${prNumber})`,
-              '',
-              `The following snapshot packages have been published with the \`${prTag}\` tag:`,
-              '',
-              packageList,
-              '',
-              'You can test these packages by installing them:',
-              '```bash',
-              installCommands,
-              '```',
-              '',
-              `These packages are tagged as \`${prTag}\` on npm and won't affect the latest version.`,
-              '',
-              `**Note:** Each time this PR is updated, the \`${prTag}\` tag will point to the latest published version.`
-            ].join('\n');
-            
+            const prNumber = ${{ steps.pr.outputs.number }};
             github.rest.issues.createComment({
-              issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: commentBody
+              issue_number: prNumber,
+              body: `🚀 Preview packages published with tag \`pr${prNumber}\`\n\nInstall with: \`pnpm add @your-org/package@pr${prNumber}\``
             });

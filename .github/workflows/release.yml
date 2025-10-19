@@ -1,83 +1,107 @@
+# .github/workflows/release.yml
 name: Release
 
 on:
   push:
-    branches: [main]
-
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+    branches:
+      - main
 
 jobs:
-  ci:
-    name: CI
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.0.0
-          
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 18
-          cache: 'pnpm'
-          
-      - run: pnpm install --frozen-lockfile
-      
-      - run: pnpm run lint
-      
-      - run: pnpm run check-types
-      
-      - run: pnpm run build
-
-  publish:
-    name: Publish
-    needs: ci
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v3
         with:
-          node-version: 18
+          version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.0.0
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build packages
-        run: pnpm run build
+        run: pnpm turbo build
 
-      - name: Create Release Pull Request or Publish to npm
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          publish: pnpm changeset publish
-          version: pnpm changeset version
-          commit: "chore: version packages"
-          title: "chore: version packages"
+      - name: Get merged PR info
+        id: pr
+        run: |
+          PR_NUMBER=$(gh pr list --search "${{ github.sha }}" --state merged --json number --jq '.[0].number')
+          if [ -n "$PR_NUMBER" ]; then
+            PR_TITLE=$(gh pr view $PR_NUMBER --json title --jq '.title')
+            PR_BODY=$(gh pr view $PR_NUMBER --json body --jq '.body')
+            echo "number=$PR_NUMBER" >> $GITHUB_OUTPUT
+            echo "title=$PR_TITLE" >> $GITHUB_OUTPUT
+            {
+              echo "body<<EOF"
+              echo "$PR_BODY"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create changelog
+        if: steps.pr.outputs.number != ''
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Parse version from PR title (expecting format: feat: description or fix: description)
+          PR_TITLE="${{ steps.pr.outputs.title }}"
+          
+          # Determine version bump type
+          if [[ "$PR_TITLE" =~ ^feat!:|^fix!:|BREAKING ]]; then
+            BUMP="major"
+          elif [[ "$PR_TITLE" =~ ^feat: ]]; then
+            BUMP="minor"
+          else
+            BUMP="patch"
+          fi
+          
+          # Update versions and generate changelog
+          pnpm -r exec npm version $BUMP --no-git-tag-version
+          
+          # Create changelog entry
+          DATE=$(date +%Y-%m-%d)
+          echo "## Changes from PR #${{ steps.pr.outputs.number }} ($DATE)" >> CHANGELOG.md.tmp
+          echo "" >> CHANGELOG.md.tmp
+          echo "${{ steps.pr.outputs.title }}" >> CHANGELOG.md.tmp
+          echo "" >> CHANGELOG.md.tmp
+          cat CHANGELOG.md >> CHANGELOG.md.tmp || true
+          mv CHANGELOG.md.tmp CHANGELOG.md
+          
+          git add .
+          git commit -m "chore: release [skip ci]"
+          git push
+
+      - name: Publish to npm
+        run: pnpm -r publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub release
+        if: steps.pr.outputs.number != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const version = require('./package.json').version;
+            
+            github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: `v${version}`,
+              name: `v${version}`,
+              body: `${{ steps.pr.outputs.body }}`,
+              draft: false,
+              prerelease: false
+            });
