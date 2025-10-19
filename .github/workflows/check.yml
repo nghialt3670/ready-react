@@ -34,7 +34,7 @@ jobs:
         run: pnpm turbo lint
 
       - name: Run type check
-        run: pnpm turbo type-check
+        run: pnpm turbo check-types
 
       - name: Run tests
         run: pnpm turbo test
