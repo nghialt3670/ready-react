@@ -2,8 +2,6 @@
 name: Format
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
   workflow_run:
     workflows: ["Check"]
     types: [completed]
@@ -12,7 +10,6 @@ jobs:
   format:
     runs-on: ubuntu-latest
     if: |
-      github.event_name == 'workflow_run' && 
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'pull_request'
     steps:
