@@ -1,4 +1,4 @@
-# @ready-react/material
+# @ready-react/material-ui
 
 ## 0.0.1
 

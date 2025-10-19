@@ -1,0 +1,68 @@
+# .github/workflows/check.yml
+name: Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate PR title
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run lint
+        run: pnpm turbo lint
+
+      - name: Run type check
+        run: pnpm turbo check-types
+
+      - name: Run tests
+        run: pnpm turbo test
+
+      - name: Run build
+        run: pnpm turbo build
+
+  format:
+    needs: check
+    uses: ./.github/workflows/format.yml
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      commit: true
+    secrets: inherit
+
+  preview:
+    needs: format
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/preview.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      pr_head_ref: ${{ github.head_ref }}
+    secrets: inherit

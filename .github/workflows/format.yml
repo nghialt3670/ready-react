@@ -1,0 +1,55 @@
+# .github/workflows/format.yml
+name: Format
+
+on:
+  workflow_call:
+    inputs:
+      commit:
+        description: "Whether to commit and push formatting changes"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref || github.ref_name || github.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format code
+        run: pnpm turbo format
+
+      - name: Commit changes
+        if: inputs.commit == true
+        env:
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add .
+          if git diff --staged --quiet; then
+            echo "No formatting changes to commit"
+          else
+            git commit -m "chore: format code"
+            git push origin HEAD:${BRANCH_NAME:-${GITHUB_REF_NAME}}
+          fi

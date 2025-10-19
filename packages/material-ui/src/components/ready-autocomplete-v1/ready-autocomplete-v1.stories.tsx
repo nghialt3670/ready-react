@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import React, { useCallback } from "react";
 
-import { ReadyAutocompleteV1 } from "./ready-autocomplete-v1.component.tsx";
+import { ReadyAutocompleteV1 } from "./ready-autocomplete-v1.component.js";
 
 // Mock async API function
 async function mockGetOptions({

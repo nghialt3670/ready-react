@@ -6,6 +6,5 @@
   "linked": [],
   "access": "public",
   "baseBranch": "main",
-  "updateInternalDependencies": "patch",
-  "ignore": ["@repo/ui", "@repo/eslint-config", "@repo/typescript-config"]
+  "updateInternalDependencies": "patch"
 }

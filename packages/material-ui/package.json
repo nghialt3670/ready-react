@@ -1,5 +1,5 @@
 {
-  "name": "@ready-react/material",
+  "name": "@ready-react/material-ui",
   "version": "0.0.1",
   "private": false,
   "main": "./dist/index.js",
@@ -11,8 +11,8 @@
   "scripts": {
     "dev": "echo 'Add dev script here'",
     "build": "tsup src/index.ts --format cjs,esm --dts",
-    "test": "echo 'Add test script here'",
-    "lint": "echo 'Add lint script here'"
+    "test": "vitest run",
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
